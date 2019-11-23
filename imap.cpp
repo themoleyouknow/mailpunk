@@ -50,47 +50,53 @@ Session::~Session(){
 /* ----- getMessages function ----- */
 Message** Session::getMessages() {
   // Retrieve number of message using getNumMessages:
-  uint32_t num_messages = getNumMessages(mailbox);
-  // Check if mailbox is empty!
-  if (num_messages == 0) {
-    messages = new Message*[1];
-    messages[0] = nullptr;
-    return messages;
-  }
+  num_msgs = fetchNumMessages(mailbox);
+
   // Initialise Session attribute list of Messages of size num_messages+1 (add a nullptr to end):
-  messages = new Message*[num_messages + 1];
+  messages = new Message*[num_msgs + 1];
+
   // Create a new set, fetch type, fetch attribute and result structure:: 
   auto set = mailimap_set_new_interval(1,0);//mailimap_set_item to retrieve all messages:  
   auto fetch_att = mailimap_fetch_att_new_uid();//mailimap_fetch_att
   auto fetch_type = mailimap_fetch_type_new_fetch_att_list_empty();//empty mailimap_fetch_type
   clist* result;//result structure for mailimap_fetch function
+
+  // Delare and initialise a counter
+  int count = 0;
+  
   // Define mailimap_fetch_type_new_fetch_att_list_add error and attempt to add to fetch_type:
   string fetch_add_err = "Fetch Type Error: Unable to add fetch uid attribute to fetch type structure.\n\n Error code: ";
   check_error(mailimap_fetch_type_new_fetch_att_list_add(fetch_type, fetch_att), fetch_add_err);
 
-  // Define message retrieval error and attempt to retrieve messages:
-  string get_msgs_err = "Message Retrieval Error: Unable to retrieve all messages from mailbox ";
-  get_msgs_err += mailbox; get_msgs_err += ".\n\nError code: ";
-  check_error(mailimap_fetch(imap_session, set, fetch_type, &result), get_msgs_err);
 
-  // Iterate through result list structure and set messages:
-  clistiter* cur;
-  int count = 0;
-  for(cur = clist_begin(result); cur != NULL; cur = clist_next(cur)) {
-    auto msg_att = (mailimap_msg_att*)clist_content(cur);
-    uint32_t uid = fetchUID(msg_att);
-    if (uid) {
-      messages[count] = new Message(this, uid);
-      messages[count]->setMessage();
-      count++;
-    } 
+  // Check to see if mailbox is empty, if it is, don't try to fetch!
+  if (num_msgs>0) {
+    // Define message retrieval error and attempt to retrieve messages:
+    string get_msgs_err = "Message Retrieval Error: Unable to retrieve all messages from mailbox ";
+    get_msgs_err += mailbox; get_msgs_err += ".\n\nError code: ";
+    check_error(mailimap_fetch(imap_session, set, fetch_type, &result), get_msgs_err);
+  
+    // Iterate through result list structure and set messages:
+    clistiter* cur;
+    for(cur = clist_begin(result); cur != nullptr; cur = clist_next(cur)) {
+      auto msg_att = (mailimap_msg_att*)clist_content(cur);
+      uint32_t uid = fetchUID(msg_att);
+      if (uid) {
+        messages[count] = new Message(this, uid);
+        messages[count]->setMessage();
+        count++;
+      } 
+    }
+    // Free result of fetch
+    mailimap_fetch_list_free(result);
   }
+
   messages[count] = nullptr;
+
   // Free associated data structures:
-  mailimap_fetch_list_free(result);
   mailimap_fetch_type_free(fetch_type);
   mailimap_set_free(set);
-
+  
   // Return messages
   return messages;
 }
@@ -113,8 +119,8 @@ uint32_t Session::fetchUID(struct mailimap_msg_att* msg_att) {
   return 0;
 }
 
-/* ----- getNumMessages function ----- */
-uint32_t Session::getNumMessages(string mb = "INBOX") {
+/* ----- fetchNumMessages function ----- */
+uint32_t Session::fetchNumMessages(string mb = "INBOX") {
   // Declare sa_list variable and define as void:
   auto sa_list = mailimap_status_att_list_new_empty(); // mailimap_status_att_list*
   // Declare a result structure:
@@ -143,6 +149,14 @@ uint32_t Session::getNumMessages(string mb = "INBOX") {
 
   // Return value:
   return num_messages;
+}
+
+/* ----- deleteAllBut ----- */
+void Session::deleteAllBut(uint32_t uid) {
+  for(int count = 0; count < num_msgs; count++) {
+    if (messages[count]->getUID() != uid) {delete messages[count];}
+  }
+  delete [] messages;
 }
 
 /* ----- deleteAll ----- */
@@ -248,6 +262,9 @@ void Message::setFrom(clist* frm_list) {
 
 /* ----- deleteFromMailbox ----- */
 void Message::deleteFromMailbox() {
+  // Check to see if the mailbox is empty, i.e. this is a nullptr!
+  if (this==nullptr) {return;}
+
   // Declare and initialise an empty flag_list:
   auto flag_list = mailimap_flag_list_new_empty(); // mailimap_flag_list*
   auto del_flag = mailimap_flag_new_deleted(); // mailimap_flag*
@@ -257,17 +274,22 @@ void Message::deleteFromMailbox() {
   string del_flag_add_err = "Flag List Errror: Unable to add 'delete' flag to current message with UID: ";
   del_flag_add_err += uid; del_flag_add_err += ".\n\nError code: ";
   check_error(mailimap_flag_list_add(flag_list, del_flag), del_flag_add_err);
+
   // Declare and define variable to store flaglist:
   auto store = mailimap_store_att_flags_new_set_flags(flag_list); // mailimap_store_att_flags*
-
+  
   // Define store error and attempt to store flaglist for set of messages:
   string store_err = "Store Error: Unable to store flag list containing 'delete' flag for set containing message with UID: ";
   store_err += uid; store_err += ".\n\nError code: ";
   check_error(mailimap_uid_store(session->getIMAP(), set, store), store_err);
+
   // Define expunge error and attempt to expunge:
   string  exp_err = "Expunge Error: Unable to expunge message with UID ";
   exp_err += uid; exp_err += " mailbox "; exp_err += session->getMailbox(); exp_err += ".\n\nError code: ";
   check_error(mailimap_expunge(session->getIMAP()), exp_err);
+
+  // Delete everything but this message:
+  session->deleteAllBut(uid);
 
   // Update UI:
   session->updateUI();
@@ -278,5 +300,7 @@ void Message::deleteFromMailbox() {
   //mailimap_flag_list_free(flag_list);
   mailimap_store_att_flags_free(store);
 
+  // Delete this message:
   delete this;
+
 }

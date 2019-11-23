@@ -42,6 +42,11 @@ public:
           else if (field == "From") {return from;}
           else {return "";}
         }
+  
+  /* ----- getUID ----- */
+  // Function to return the UID of a message.
+        uint32_t getUID() const {return uid;}
+
   /* ----- setMessage ----- */
   // Function to set the message attributes.
         void setMessage();
@@ -65,6 +70,10 @@ private:
   /* ----- fetchUID ----- */
   // Function to fetch the UID of a message, used in getMessages!
          uint32_t fetchUID(struct mailimap_msg_att* msg_att);
+
+  /* ----- getNumMessages ----- */
+  // Function to get the number of messages in the session mailbox.
+        uint32_t fetchNumMessages(std::string mb);
   
 
 public:
@@ -90,22 +99,26 @@ public:
   // Function to select a mailbox (only one can be selected at any given time), can only be performed after login.
 	void selectMailbox(std::string const& mb);
   
+  /* ----- deleteAllBut ----- */
+  // Function to delete all messages within mailbox.
+        void deleteAllBut(uint32_t uid);
+
   /* ----- deleteAll ----- */
   // Function to delete all messages within mailbox.
         void deleteAll();
 
+  
   /* ----- getMailbox ----- */
   // Funcion to return session mailbox.
        std::string getMailbox() const {return mailbox;}
+
+  /* ----- getNumMessages ----- */
+  // Function to return the number of messages in the session mailbox..
+       uint32_t getNumMessages() const {return num_msgs;}
   
   /* ----- getIMAP ----- */
   // Function to return session imap_session.
         mailimap* getIMAP() const {return imap_session;}
-
-  /* ----- getNumMessages ----- */
-  // Function to get the number of messages in the session mailbox.
-        uint32_t getNumMessages(std::string mb);
-
   
   /* ----- DESCTRUCTOR ----- */
 	~Session();
