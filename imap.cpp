@@ -1,4 +1,5 @@
 #include "imap.hpp"
+#include <fstream>
 
 using namespace IMAP;
 using namespace std;
@@ -37,11 +38,16 @@ void Session::selectMailbox(string const& mb) {
 /* ----- DESTRUCTOR ----- */
 Session::~Session(){
   // Delete messages:
-  deleteAll();
+  if (num_msgs!=0) {deleteAll();}
+  else {delete messages[0]; delete [] messages;}
   
   // Define logout error message and attempt to log out:
-  string logout_err = "Logout Error: Unable to log out.\n\nError code: ";
-  check_error(mailimap_logout(imap_session), logout_err);
+  string logout_err_str = "Logout Error: Unable to log out.\n\nError code: ";
+  int logout_err_int = mailimap_logout(imap_session);
+  if (logout_err_int !=4) {
+    if (logout_err_int != 0){mailimap_free(imap_session);}
+    check_error(logout_err_int, logout_err_str);
+  }
 
   // Free imap_session:
   mailimap_free(imap_session);
@@ -52,9 +58,7 @@ Message** Session::getMessages() {
   // Retrieve number of message using getNumMessages:
   num_msgs = fetchNumMessages(mailbox);
 
-  // Initialise Session attribute list of Messages of size num_messages+1 (add a nullptr to end):
-  messages = new Message*[num_msgs + 1];
-
+  
   // Create a new set, fetch type, fetch attribute and result structure:: 
   auto set = mailimap_set_new_interval(1,0);//mailimap_set_item to retrieve all messages:  
   auto fetch_att = mailimap_fetch_att_new_uid();//mailimap_fetch_att
@@ -65,16 +69,29 @@ Message** Session::getMessages() {
   int count = 0;
   
   // Define mailimap_fetch_type_new_fetch_att_list_add error and attempt to add to fetch_type:
-  string fetch_add_err = "Fetch Type Error: Unable to add fetch uid attribute to fetch type structure.\n\n Error code: ";
-  check_error(mailimap_fetch_type_new_fetch_att_list_add(fetch_type, fetch_att), fetch_add_err);
+  string fetch_add_err_str = "Fetch Type Error: Unable to add fetch uid attribute to fetch type structure.\n\n Error code: ";
+  // Check to see if we're going to return an error, if so then free:
+  int fetch_add_err_int = mailimap_fetch_type_new_fetch_att_list_add(fetch_type, fetch_att);
+  // Delete if necesssary
+  if (fetch_add_err_int != 0) {mailimap_fetch_type_free(fetch_type); mailimap_set_free(set);}
+  // Call check_error
+  check_error(fetch_add_err_int, fetch_add_err_str);
 
 
   // Check to see if mailbox is empty, if it is, don't try to fetch!
   if (num_msgs>0) {
+    // Initialise Session attribute list of Messages of size num_messages+1 (add a nullptr to end):
+    messages = new Message*[num_msgs + 1];
+
     // Define message retrieval error and attempt to retrieve messages:
-    string get_msgs_err = "Message Retrieval Error: Unable to retrieve all messages from mailbox ";
-    get_msgs_err += mailbox; get_msgs_err += ".\n\nError code: ";
-    check_error(mailimap_fetch(imap_session, set, fetch_type, &result), get_msgs_err);
+    string get_msgs_err_str = "Message Retrieval Error: Unable to retrieve all messages from mailbox ";
+    get_msgs_err_str += mailbox; get_msgs_err_str += ".\n\nError code: ";
+    // Check to see if we're going to return an error, if so then free:
+    int get_msgs_err_int = mailimap_fetch(imap_session, set, fetch_type, &result);
+    // Check to see if we're goign to return an error, if so then free:
+    if (get_msgs_err_int != 0) {mailimap_fetch_list_free(result); mailimap_fetch_type_free(fetch_type); mailimap_set_free(set);}
+    // Call check_error:
+    check_error(get_msgs_err_int, get_msgs_err_str);
   
     // Iterate through result list structure and set messages:
     clistiter* cur;
@@ -89,9 +106,10 @@ Message** Session::getMessages() {
     }
     // Free result of fetch
     mailimap_fetch_list_free(result);
-  }
+    messages[count] = nullptr;
+  }else {messages = new Message*[1]; messages[0] = nullptr;}
 
-  messages[count] = nullptr;
+  
 
   // Free associated data structures:
   mailimap_fetch_type_free(fetch_type);
@@ -128,15 +146,21 @@ uint32_t Session::fetchNumMessages(string mb = "INBOX") {
 
   // Define fetch type add  error and attempt to add MAILIMAP_STATUS_ATT_MESSAGES attribute to sa_list,
   // i.e. we want the number of messages!
-  string status_add_err = "Fetch Type Error: Unable to add MAILIMAP_STATUS_ATT_MESSAGES to status attribute structure while getting number of messages in mailbox ";
-  status_add_err += mailbox; status_add_err += ".\n\n Error code: ";
-  check_error(mailimap_status_att_list_add(sa_list, MAILIMAP_STATUS_ATT_MESSAGES), status_add_err);
+  string status_add_err_str = "Fetch Type Error: Unable to add MAILIMAP_STATUS_ATT_MESSAGES to status attribute structure while getting number of messages in mailbox ";
+  status_add_err_str += mailbox; status_add_err_str += ".\n\n Error code: ";
+  int status_add_err_int = mailimap_status_att_list_add(sa_list, MAILIMAP_STATUS_ATT_MESSAGES);
+  // Check to see if error, if so then free:
+  if (status_add_err_int != 0) {mailimap_status_att_list_free(sa_list);}
+  // Call check_error:
+  check_error(status_add_err_int, status_add_err_str);
   
-  // Define mailbox status error:
-  string mailbox_st_err = "Mailbox Status Error: Unable to retrieve number of message in  mailbox ";
-  mailbox_st_err += mb; mailbox_st_err += ".\n\nError code: ";
-  // Attempt to retrieve status of mailbox using sa_list and storing in result (passed by reference as input **):
-  check_error(mailimap_status(imap_session, mailbox.c_str(), sa_list, &result), mailbox_st_err);
+  // Define mailbox status error and attempt to retrieve status of mailbox using sa_list and storing in result (passed by reference as input **):
+  string mailbox_st_err_str = "Mailbox Status Error: Unable to retrieve number of message in  mailbox ";
+  mailbox_st_err_str += mb; mailbox_st_err_str += ".\n\nError code: ";
+  int mailbox_st_err_int =  mailimap_status(imap_session, mailbox.c_str(), sa_list, &result);
+  if(mailbox_st_err_int != 0) {mailimap_status_att_list_free(sa_list); mailimap_mailbox_data_status_free(result);}
+  // Call check_error
+  check_error(mailbox_st_err_int, mailbox_st_err_str);
 
   // Declare and define info to store the mailimap_status_info-typecasted-first-element of result's info list: 
   auto info = (struct mailimap_status_info*)clist_content(clist_begin(result->st_info_list));
@@ -270,6 +294,8 @@ void Message::deleteFromMailbox() {
   auto del_flag = mailimap_flag_new_deleted(); // mailimap_flag*
   auto set = mailimap_set_new_single(uid); // mailimap_set*
 
+
+
   // Define flag add error and attempt to add del_flag to flag list:
   string del_flag_add_err = "Flag List Errror: Unable to add 'delete' flag to current message with UID: ";
   del_flag_add_err += uid; del_flag_add_err += ".\n\nError code: ";
@@ -282,25 +308,26 @@ void Message::deleteFromMailbox() {
   string store_err = "Store Error: Unable to store flag list containing 'delete' flag for set containing message with UID: ";
   store_err += uid; store_err += ".\n\nError code: ";
   check_error(mailimap_uid_store(session->getIMAP(), set, store), store_err);
-
+  
   // Define expunge error and attempt to expunge:
   string  exp_err = "Expunge Error: Unable to expunge message with UID ";
   exp_err += uid; exp_err += " mailbox "; exp_err += session->getMailbox(); exp_err += ".\n\nError code: ";
   check_error(mailimap_expunge(session->getIMAP()), exp_err);
-
+  
   // Delete everything but this message:
   session->deleteAllBut(uid);
 
   // Update UI:
   session->updateUI();
-
+  
   // Delete flaglist, del_flag, set, and store:
   mailimap_set_free(set);
+
   //mailimap_flag_free(del_flag);
   //mailimap_flag_list_free(flag_list);
+
   mailimap_store_att_flags_free(store);
 
   // Delete this message:
   delete this;
-
 }
