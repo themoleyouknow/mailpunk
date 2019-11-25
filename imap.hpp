@@ -65,7 +65,7 @@ private:
          Message** messages;
          uint32_t num_msgs;
          std::string mailbox;
-
+         bool logged_in = false;
   
   /* ----- fetchUID ----- */
   // Function to fetch the UID of a message, used in getMessages!
@@ -77,7 +77,7 @@ private:
   
 
 public:
-  /* ----- CONTRUCTOR ----- */
+  /* ----- CONSTRUCTOR ----- */
         Session(std::function<void()> updateUI);
   
   /* ----- UPDATEUI ----- */

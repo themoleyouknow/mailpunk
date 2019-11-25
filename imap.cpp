@@ -13,9 +13,14 @@ Session::Session(function<void()> updateUI) : updateUI(updateUI), mailbox("INBOX
 /* ----- login ----- */
 void Session::login(string const& userid, string const& password) {
   // Define error message and attempt to login:
-  string login_err = "Login Error: Unable to log in ";
-  login_err += userid; login_err += ".\n\nError code: ";
-  check_error(mailimap_login(imap_session, userid.c_str(), password.c_str()), login_err);
+  string login_err_str = "Login Error: Unable to log in ";
+  login_err_str += userid; login_err_str += ".\n\nError code: ";
+  // Define error message integer:
+  int login_err_int = mailimap_login(imap_session, userid.c_str(), password.c_str());
+  if (login_err_int == 0) {
+    logged_in = true;
+    check_error(login_err_int, login_err_str);
+  }else {delete this;}
 }
 
 /* ----- connect ----- */
@@ -37,16 +42,20 @@ void Session::selectMailbox(string const& mb) {
 
 /* ----- DESTRUCTOR ----- */
 Session::~Session(){
-  // Delete messages:
-  if (num_msgs!=0) {deleteAll();}
-  else {delete messages[0]; delete [] messages;}
-  
-  // Define logout error message and attempt to log out:
-  string logout_err_str = "Logout Error: Unable to log out.\n\nError code: ";
-  int logout_err_int = mailimap_logout(imap_session);
-  if (logout_err_int !=4) {
-    if (logout_err_int != 0){mailimap_free(imap_session);}
-    check_error(logout_err_int, logout_err_str);
+  // Check if logged in:
+  if(logged_in) {
+    // Delete messages:
+    if (num_msgs!=0) {deleteAll();}
+    else {delete messages[0]; delete [] messages;}
+    // Define logout error message and attempt to log out:
+    string logout_err_str = "Logout Error: Unable to log out.\n\nError code: ";
+    int logout_err_int = mailimap_logout(imap_session);
+    // Inherent bug in code causes 4 to be returned always! Check!
+    if (logout_err_int !=4) {
+      // Check to see if we get a logout error! If so, free!
+      if (logout_err_int != 0){mailimap_free(imap_session);}
+      check_error(logout_err_int, logout_err_str);
+    }
   }
 
   // Free imap_session:
